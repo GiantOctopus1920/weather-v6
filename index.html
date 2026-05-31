@@ -126,7 +126,7 @@
         .data-col:first-child { text-align: left; font-weight: 500; color: #888; }
         .data-col:last-child { text-align: right; font-weight: bold; }
         
-        /* NOWE DYNAMICZNE KOLORY SKALI REALNEJ DLA ZJADACZA CHLEBA */
+        /* KOLORY SKALI REALNEJ DLA ZJADACZA CHLEBA */
         .precip-none { color: #2ecc71; } /* Zielony - Sucho */
         .precip-low { color: #f1c40f; }  /* Żółty - Mżawka */
         .precip-mid { color: #e67e22; }  /* Pomarańczowy - Deszcz */
@@ -259,7 +259,7 @@
 </div>
 
 <script>
-    const locations = [
+    var locations = [
         { id: 'loc1', lat: 49.9625, lon: 20.7497 }, 
         { id: 'loc2', lat: 50.0468, lon: 19.9544 }, 
         { id: 'loc3', lat: 54.2710, lon: 21.0110 }  
@@ -276,10 +276,9 @@
         return "Pochmurno";
     }
 
-    // Nowa inteligencja analizująca realny deszcz (w litrach), ignorująca puste procenty
     function getAdvice(temp, wind, maxPrecipNext3h, currentWCode) {
-        let text = "";
-        let isBad = false;
+        var text = "";
+        var isBad = false;
         
         if (currentWCode >= 95 || maxPrecipNext3h > 7.0) { text += "⛈️ UWAGA: Ryzyko burzy i wyładowań! <br>"; isBad = true; }
         else if (maxPrecipNext3h > 3.0) { text += "🌧️ Ściana wody / Mocna ulewa. Odpuść jazdę. <br>"; isBad = true; }
@@ -299,40 +298,141 @@
         return text || "Dobre warunki do jazdy szosowej.";
     }
 
-    async function fetchWeatherData() {
-        for (const loc of locations) {
-            const card = document.getElementById(loc.id);
-            if (!card) continue;
+    function fetchWeatherData() {
+        for (var i = 0; i < locations.length; i++) {
+            (function(loc) {
+                var card = document.getElementById(loc.id);
+                if (!card) return;
 
-            try {
-                // Pobieramy JEDNOCZEŚNIE szansę (%) oraz realną objętość (precipitation) i kody (weather_code)
-                const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,wind_speed_10m,weather_code&hourly=precipitation,precipitation_probability,temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FWarsaw&timeformat=unixtime`;
+                // Anti-cache system: każda próba wymusza unikalny adres url
+                var uniqueStamp = Math.floor(Date.now() / 1000);
+                var url = "https://api.open-meteo.com/v1/forecast?latitude=" + loc.lat + "&longitude=" + loc.lon + "&current=temperature_2m,wind_speed_10m,weather_code&hourly=precipitation,precipitation_probability,temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FWarsaw&timeformat=unixtime&_=" + uniqueStamp;
                 
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("Błąd sieci: " + res.status);
-                const data = await res.json();
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", url, true);
                 
-                const t = Math.round(data.current.temperature_2m);
-                const w = Math.round(data.current.wind_speed_10m);
-                const currentCode = data.current.weather_code;
-                card.querySelector('.temp').innerHTML = t + " &deg;C";
-                card.querySelector('.wind').innerHTML = "Wiatr: " + w + " km/h";
+                xhr.onload = function() {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        var data = JSON.parse(xhr.responseText);
+                        
+                        var t = Math.round(data.current.temperature_2m);
+                        var w = Math.round(data.current.wind_speed_10m);
+                        var currentCode = data.current.weather_code;
+                        card.querySelector('.temp').innerHTML = t + " &deg;C";
+                        card.querySelector('.wind').innerHTML = "Wiatr: " + w + " km/h";
 
-                const nowSec = Math.floor(Date.now() / 1000);
-                let hIndex = data.hourly.time.findIndex(timeSec => timeSec >= nowSec - 3600);
-                if (hIndex === -1) hIndex = 0;
+                        var nowSec = Math.floor(Date.now() / 1000);
+                        var hIndex = 0;
+                        for (var j = 0; j < data.hourly.time.length; j++) {
+                            if (data.hourly.time[j] >= nowSec - 3600) {
+                                hIndex = j;
+                                break;
+                            }
+                        }
 
-                let hHTML = "";
-                let maxPrecip3h = 0;
-                let rainHTMLData = "";
-                
-                for(let k=0; k<6; k++){ 
-                    let idx = hIndex + k;
-                    if(idx >= data.hourly.time.length) break;
-                    
-                    let dateObj = new Date(data.hourly.time[idx] * 1000);
-                    let hours = String(dateObj.getHours()).padStart(2, '0');
-                    let timeStr = `${hours}:00`;
-                    
-                    let p = data.hourly.precipitation[idx] || 0; // Litry na m2
-                    let prob = data.hourly.precipitation_probability[idx] || 0; // Procenty
+                        var hHTML = "";
+                        var maxPrecip3h = 0;
+                        var rainHTMLData = "";
+                        
+                        for (var k = 0; k < 6; k++) { 
+                            var idx = hIndex + k;
+                            if (idx >= data.hourly.time.length) break;
+                            
+                            var dateObj = new Date(data.hourly.time[idx] * 1000);
+                            var hours = dateObj.getHours();
+                            if (hours < 10) hours = "0" + hours;
+                            var timeStr = hours + ":00";
+                            
+                            var p = data.hourly.precipitation[idx] || 0; 
+                            var prob = data.hourly.precipitation_probability[idx] || 0; 
+                            var tempHour = Math.round(data.hourly.temperature_2m[idx]);
+                            var wCode = data.hourly.weather_code[idx];
+                            
+                            if (k < 3 && p > maxPrecip3h) maxPrecip3h = p; 
+                            
+                            var precipClass = 'precip-none';
+                            var textStatus = 'Sucho';
+                            var statusIcon = '✅';
+                            var rainZoneColor = '';
+                            
+                            if (p <= 0.2) {
+                                precipClass = 'precip-none';
+                                textStatus = 'Sucho';
+                            } else if (wCode >= 95 || p > 7.0) {
+                                precipClass = 'precip-storm'; 
+                                textStatus = '🚨 BURZA';
+                                statusIcon = '❌';
+                                rainZoneColor = 'rgba(155, 89, 182, 0.65)';
+                            } else if (p > 3.0) {
+                                precipClass = 'precip-high';  
+                                textStatus = 'Ulewa (' + p.toFixed(1) + ' l)';
+                                statusIcon = '❌';
+                                rainZoneColor = 'rgba(231, 76, 60, 0.6)';
+                            } else if (p > 1.0) {
+                                precipClass = 'precip-mid';   
+                                textStatus = 'Deszcz (' + p.toFixed(1) + ' l)';
+                                statusIcon = '❌';
+                                rainZoneColor = 'rgba(230, 126, 34, 0.55)';
+                            } else {
+                                precipClass = 'precip-low';   
+                                textStatus = 'Mżawka (' + p.toFixed(1) + ' l)';
+                                statusIcon = '⚠️';
+                                rainZoneColor = 'rgba(241, 196, 15, 0.45)';
+                            }
+                            
+                            if (p > 0.2) {
+                                var rainSize = Math.min(p * 20, 95) + 35;
+                                var xPos = 35 + (k * 6) - 10; 
+                                var yPos = 20 - (k * 3) + 5;  
+                                rainHTMLData += '<div class="rain-zone" style="top:' + yPos + '%; left:' + xPos + '%; width:' + rainSize + 'px; height:' + rainSize + 'px; background-color:' + rainZoneColor + '; opacity:1;"></div>';
+                            }
+
+                            hHTML += '<div class="data-row">' +
+                                        '<div class="data-col">' + timeStr + '</div>' +
+                                        '<div class="data-col" style="color: #ffcc00; font-weight: bold;">' + tempHour + '&deg;C</div>' +
+                                        '<div class="data-col">' + statusIcon + '</div>' +
+                                        '<div class="data-col ' + precipClass + '">' + textStatus + ' <span style="font-size:0.8em; opacity:0.5;">(' + prob + '%)</span></div>' +
+                                      '</div>';
+                        }
+                        
+                        if (rainHTMLData === "") {
+                            rainHTMLData = '<div style="position:absolute; top:23%; width:100%; text-align:center; color:#2ecc71; font-size:0.82em; font-weight:bold; letter-spacing:1px;">CZYSTE NIEBO / BRAK REALNYCH OPADÓW</div>';
+                        }
+                        
+                        document.getElementById('rain-' + loc.id).innerHTML = rainHTMLData;
+                        document.getElementById('hourly-' + loc.id).innerHTML = hHTML;
+
+                        var advDiv = card.querySelector('.advice');
+                        advDiv.innerHTML = getAdvice(t, w, maxPrecip3h, currentCode);
+                        if (advDiv.innerHTML.indexOf("deszcz") !== -1 || advDiv.innerHTML.indexOf("Mocna") !== -1 || advDiv.innerHTML.indexOf("UWAGA") !== -1 || advDiv.innerHTML.indexOf("Silny") !== -1 || advDiv.innerHTML.indexOf("Mróz") !== -1) {
+                            advDiv.style.borderLeftColor = "#e74c3c"; advDiv.style.backgroundColor = "#331c1a";
+                        } else if (advDiv.innerHTML.indexOf("Idealne") !== -1) {
+                            advDiv.style.borderLeftColor = "#2ecc71"; advDiv.style.backgroundColor = "#1a3320";
+                        } else {
+                            advDiv.style.borderLeftColor = "#f1c40f"; advDiv.style.backgroundColor = "#332c1a";
+                        }
+
+                        var dHTML = "";
+                        for (var m = 1; m <= 5; m++) {
+                            if (m >= data.daily.time.length) break;
+                            var dDate = new Date(data.daily.time[m] * 1000); 
+                            var daysPl = ["Niedz", "Pon", "Wt", "Śr", "Czw", "Pt", "Sob"];
+                            var dName = daysPl[dDate.getDay()];
+                            var minTemp = Math.round(data.daily.temperature_2m_min[m]);
+                            var maxTemp = Math.round(data.daily.temperature_2m_max[m]);
+                            var desc = getDesc(data.daily.weather_code[m]);
+                            dHTML += '<div class="data-row"><span>' + dName + ' (' + desc + ')</span><span style="font-weight:bold;">' + minTemp + '&deg;C / ' + maxTemp + '&deg;C</span></div>';
+                        }
+                        document.getElementById('daily-' + loc.id).innerHTML = dHTML;
+                    }
+                };
+                xhr.send();
+            })(locations[i]);
+        }
+    }
+
+    // Bezpośredni rozruch silnika na samym dole
+    fetchWeatherData();
+</script>
+</body>
+</html>
