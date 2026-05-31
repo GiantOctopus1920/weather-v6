@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Pogodowy dla Rowerzystów</title>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            margin: 0;
+            padding: 15px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        @media (max-width: 1100px) {
+            .container { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 700px) {
+            .container { grid-template-columns: 1fr; }
+        }
+        
+        .card {
+            background-color: #2d2d2d;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.6);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .current {
+            background-color: #222;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .temp { font-size: 2.8em; font-weight: bold; color: #ffcc00; margin: 5px 0; }
+        .wind { color: #aaa; font-size: 0.95em; }
+        .advice {
+            background-color: #1a3320;
+            border-left: 6px solid #2ecc71;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 1em;
+            border-radius: 0 6px 6px 0;
+            min-height: 40px;
+            line-height: 1.4;
+        }
+        
+        .section-title { 
+            color: #4da6ff; font-size: 1.3em; border-bottom: 2px solid #444; 
+            padding-bottom: 8px; margin-top: 20px; margin-bottom: 15px; 
+            font-weight: 600;
+        }
+        
+        /* ZAAWANSOWANA INFOGRAFIKA MAPOWA */
+        .infographic-wrapper {
+            background-color: #1a2530; 
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: auto;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #444;
+            color: #ccc;
+            height: 400px;
+        }
+        
+        /* Konturowa mapa w tle */
+        .map-contours {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 48%;
+            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><path fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" d="M10,10 C50,50 100,20 150,50 S200,80 250,50 S300,20 350,50 S390,90 390,120 S350,150 300,180 S250,210 200,180 S150,150 100,180 S50,210 10,180 Z"/><path fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" d="M20,20 C60,60 110,30 160,60 S210,90 260,60 S310,30 360,60 S395,95 395,125 S355,155 305,185 S255,215 205,185 S155,155 105,185 S55,215 15,185 Z"/></svg>');
+            background-size: cover;
+            opacity: 0.6;
+        }
+        
+        .map-labels {
+            position: absolute; top: 0; left: 0; width: 100%; height: 48%;
+            pointer-events: none;
+        }
+        .map-label { font-size: 0.75em; color: rgba(255,255,255,0.5); position: absolute; }
+        .label-center { font-weight: bold; color: rgba(255,255,255,0.9); font-size: 0.85em; }
+        
+        /* Strefy opadów deszczu */
+        .map-precipitation {
+            position: absolute; top: 0; left: 0; width: 100%; height: 48%;
+            pointer-events: none;
+        }
+        .rain-zone { position: absolute; border-radius: 50%; filter: blur(16px); opacity: 0; transition: all 0.5s; }
+        
+        /* MINIMALISTYCZNA LEGENDA W ROGU MAPY */
+        .map-legend {
+            position: absolute; top: 10px; right: 12px;
+            font-size: 0.68em; text-align: right;
+            z-index: 2;
+            color: rgba(255,255,255,0.4);
+            line-height: 1.4;
+        }
+        
+        /* Tabela danych (szczegóły 6h) */
+        .infographic-data {
+            position: absolute;
+            bottom: 15px; left: 15px; right: 15px;
+            background-color: #1e2936;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 0.82em;
+            border: 1px solid #324354;
+        }
+        .data-header { color: #8cb4e6; margin-bottom: 10px; font-weight: 600; font-size: 0.85em; }
+        .data-grid { display: flex; flex-direction: column; gap: 8px; }
+        .data-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 6px; }
+        .data-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .data-col { flex: 1; text-align: center; }
+        .data-col:first-child { text-align: left; font-weight: 500; color: #888; }
+        .data-col:last-child { text-align: right; font-weight: bold; }
+        
+        /* NOWE DYNAMICZNE KOLORY SKALI REALNEJ DLA ZJADACZA CHLEBA */
+        .precip-none { color: #2ecc71; } /* Zielony - Sucho */
+        .precip-low { color: #f1c40f; }  /* Żółty - Mżawka */
+        .precip-mid { color: #e67e22; }  /* Pomarańczowy - Deszcz */
+        .precip-high { color: #e74c3c; } /* Czerwony - Ulewa */
+        .precip-storm { color: #9b59b6; } /* Fioletowy - Burza */
+
+        .btn-refresh { 
+            display: block; margin: 15px auto 25px; padding: 12px 25px; 
+            background: #4da6ff; color: #000; border: none; border-radius: 8px; 
+            font-weight: bold; cursor: pointer; font-size: 1.1em;
+        }
+        .btn-refresh:hover { background: #3388dd; }
+    </style>
+</head>
+<body>
+
+<button class="btn-refresh" onclick="location.reload()">Odśwież dane z radarów</button>
+
+<div class="container">
+    <div class="card" id="loc1">
+        <div class="section-title" style="margin-top: 0; color: #ffcc00;">Sufczyn (32-852)</div>
+        <div class="current">
+            <div class="temp">...</div>
+            <div class="wind">Pobieranie...</div>
+        </div>
+        <div class="advice">Trwa analiza...</div>
+        
+        <div class="infographic-wrapper">
+            <div class="map-contours"></div>
+            <div class="map-labels">
+                <div class="map-label label-center" style="top: 25%; left: 40%;">SUFCZYN</div>
+                <div class="map-label" style="top: 15%; left: 15%;">Brzesko</div>
+                <div class="map-label" style="top: 20%; left: 70%;">Tarnów</div>
+                <div class="map-label" style="top: 40%; left: 35%;">Dębno</div>
+            </div>
+            
+            <div class="map-legend">
+                Skala realna opadów:<br>
+                <span style="color:#2ecc71;">■</span> Brak / mżawka (<0.2 l)<br>
+                <span style="color:#f1c40f;">■</span> Lekki opad (do 1 l)<br>
+                <span style="color:#e67e22;">■</span> Deszcz (do 3 l)<br>
+                <span style="color:#e74c3c;">■</span> Ulewa (do 7 l)<br>
+                <span style="color:#9b59b6;">■</span> Burza (>7 l / wyładowania)
+            </div>
+            
+            <div class="map-precipitation" id="rain-loc1"></div>
+            
+            <div class="infographic-data">
+                <div class="data-header">REALNA PROGNOZA SUFCZYN (Najbliższe 6h):</div>
+                <div class="data-grid" id="hourly-loc1">Ładowanie...</div>
+            </div>
+        </div>
+        <div class="section-title">Najbliższe dni</div>
+        <div class="data-list daily" id="daily-loc1" style="background: #222; margin-bottom: 0;">Ładowanie...</div>
+    </div>
+
+    <div class="card" id="loc2">
+        <div class="section-title" style="margin-top: 0; color: #ffcc00;">Kraków (30-547)</div>
+        <div class="current">
+            <div class="temp">...</div>
+            <div class="wind">Pobieranie...</div>
+        </div>
+        <div class="advice">Trwa analiza...</div>
+        
+        <div class="infographic-wrapper">
+            <div class="map-contours"></div>
+            <div class="map-labels">
+                <div class="map-label label-center" style="top: 25%; left: 35%;">KRAKÓW</div>
+                <div class="map-label" style="top: 40%; left: 55%;">Wieliczka</div>
+                <div class="map-label" style="top: 35%; left: 10%;">Skawina</div>
+                <div class="map-label" style="top: 10%; left: 45%;">Mistrzejowice</div>
+            </div>
+            
+            <div class="map-legend">
+                Skala realna opadów:<br>
+                <span style="color:#2ecc71;">■</span> Brak / mżawka (<0.2 l)<br>
+                <span style="color:#f1c40f;">■</span> Lekki opad (do 1 l)<br>
+                <span style="color:#e67e22;">■</span> Deszcz (do 3 l)<br>
+                <span style="color:#e74c3c;">■</span> Ulewa (do 7 l)<br>
+                <span style="color:#9b59b6;">■</span> Burza (>7 l / wyładowania)
+            </div>
+            
+            <div class="map-precipitation" id="rain-loc2"></div>
+            
+            <div class="infographic-data">
+                <div class="data-header">REALNA PROGNOZA KRAKÓW (Najbliższe 6h):</div>
+                <div class="data-grid" id="hourly-loc2">Ładowanie...</div>
+            </div>
+        </div>
+        <div class="section-title">Najbliższe dni</div>
+        <div class="data-list daily" id="daily-loc2" style="background: #222; margin-bottom: 0;">Ładowanie...</div>
+    </div>
+
+    <div class="card" id="loc3">
+        <div class="section-title" style="margin-top: 0; color: #ffcc00;">Sępopol (11-210)</div>
+        <div class="current">
+            <div class="temp">...</div>
+            <div class="wind">Pobieranie...</div>
+        </div>
+        <div class="advice">Trwa analiza...</div>
+        
+        <div class="infographic-wrapper">
+            <div class="map-contours"></div>
+            <div class="map-labels">
+                <div class="map-label label-center" style="top: 25%; left: 40%;">SĘPOPOL</div>
+                <div class="map-label" style="top: 20%; left: 10%;">Bartoszyce</div>
+                <div class="map-label" style="top: 40%; left: 50%;">Korsze</div>
+                <div class="map-label" style="top: 10%; left: 65%;">Granica Państwa</div>
+            </div>
+            
+            <div class="map-legend">
+                Skala realna opadów:<br>
+                <span style="color:#2ecc71;">■</span> Brak / mżawka (<0.2 l)<br>
+                <span style="color:#f1c40f;">■</span> Lekki opad (do 1 l)<br>
+                <span style="color:#e67e22;">■</span> Deszcz (do 3 l)<br>
+                <span style="color:#e74c3c;">■</span> Ulewa (do 7 l)<br>
+                <span style="color:#9b59b6;">■</span> Burza (>7 l / wyładowania)
+            </div>
+            
+            <div class="map-precipitation" id="rain-loc3"></div>
+            
+            <div class="infographic-data">
+                <div class="data-header">REALNA PROGNOZA SĘPOPOL (Najbliższe 6h):</div>
+                <div class="data-grid" id="hourly-loc3">Ładowanie...</div>
+            </div>
+        </div>
+        <div class="section-title">Najbliższe dni</div>
+        <div class="data-list daily" id="daily-loc3" style="background: #222; margin-bottom: 0;">Ładowanie...</div>
+    </div>
+</div>
+
+<script>
+    const locations = [
+        { id: 'loc1', lat: 49.9625, lon: 20.7497 }, 
+        { id: 'loc2', lat: 50.0468, lon: 19.9544 }, 
+        { id: 'loc3', lat: 54.2710, lon: 21.0110 }  
+    ];
+
+    function getDesc(code) {
+        if (code === 0) return "Pogodnie";
+        if (code >= 1 && code <= 3) return "Lekkie zachmurzenie";
+        if (code >= 45 && code <= 48) return "Mgła";
+        if (code >= 51 && code <= 67) return "Deszcz";
+        if (code >= 71 && code <= 77) return "Śnieg";
+        if (code >= 80 && code <= 82) return "Ulewa";
+        if (code >= 95 && code <= 99) return "Burza";
+        return "Pochmurno";
+    }
+
+    // Nowa inteligencja analizująca realny deszcz (w litrach), ignorująca puste procenty
+    function getAdvice(temp, wind, maxPrecipNext3h, currentWCode) {
+        let text = "";
+        let isBad = false;
+        
+        if (currentWCode >= 95 || maxPrecipNext3h > 7.0) { text += "⛈️ UWAGA: Ryzyko burzy i wyładowań! <br>"; isBad = true; }
+        else if (maxPrecipNext3h > 3.0) { text += "🌧️ Ściana wody / Mocna ulewa. Odpuść jazdę. <br>"; isBad = true; }
+        else if (maxPrecipNext3h > 1.0) { text += "☔ Regularny deszcz. Zmokniesz bez peleryny. <br>"; isBad = true; }
+        else if (maxPrecipNext3h > 0.2) { text += "💧 Lekki opad / mżawka. Warunki zmienne. <br>"; }
+        
+        if (wind > 30) { text += "💨 Silny wiatr, jazda pod wiatr będzie trudna. <br>"; isBad = true; }
+        else if (wind > 18) { text += "🌬️ Odczuwalny wiatr boczny. <br>"; }
+        
+        if (temp < 0) { text += "❄️ Mróz. Ryzyko poślizgu! <br>"; isBad = true; }
+        else if (temp < 10) { text += "🧤 Chłodno, zadbaj o ciepłe rękawiczki. <br>"; }
+        else if (temp > 28) { text += "🥵 Upalnie! Weź podwójny zapas wody. <br>"; isBad = true; }
+        
+        if (!isBad && maxPrecipNext3h <= 0.2 && wind <= 18 && temp >= 10 && temp <= 28) {
+            return "<b>Idealne warunki na rower!</b> Droga jest sucha, wskakuj na siodełko.";
+        }
+        return text || "Dobre warunki do jazdy szosowej.";
+    }
+
+    async function fetchWeatherData() {
+        for (const loc of locations) {
+            const card = document.getElementById(loc.id);
+            if (!card) continue;
+
+            try {
+                // Pobieramy JEDNOCZEŚNIE szansę (%) oraz realną objętość (precipitation) i kody (weather_code)
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,wind_speed_10m,weather_code&hourly=precipitation,precipitation_probability,temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FWarsaw&timeformat=unixtime`;
+                
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Błąd sieci: " + res.status);
+                const data = await res.json();
+                
+                const t = Math.round(data.current.temperature_2m);
+                const w = Math.round(data.current.wind_speed_10m);
+                const currentCode = data.current.weather_code;
+                card.querySelector('.temp').innerHTML = t + " &deg;C";
+                card.querySelector('.wind').innerHTML = "Wiatr: " + w + " km/h";
+
+                const nowSec = Math.floor(Date.now() / 1000);
+                let hIndex = data.hourly.time.findIndex(timeSec => timeSec >= nowSec - 3600);
+                if (hIndex === -1) hIndex = 0;
+
+                let hHTML = "";
+                let maxPrecip3h = 0;
+                let rainHTMLData = "";
+                
+                for(let k=0; k<6; k++){ 
+                    let idx = hIndex + k;
+                    if(idx >= data.hourly.time.length) break;
+                    
+                    let dateObj = new Date(data.hourly.time[idx] * 1000);
+                    let hours = String(dateObj.getHours()).padStart(2, '0');
+                    let timeStr = `${hours}:00`;
+                    
+                    let p = data.hourly.precipitation[idx] || 0; // Litry na m2
+                    let prob = data.hourly.precipitation_probability[idx] || 0; // Procenty
